@@ -1,11 +1,8 @@
 import soundfile as sf 
 import numpy as np
-from scipy.fftpack import ifft, fft, rfft
+from scipy.fftpack import ifft, fft, rfft, fftshift, fftfreq
 import scipy.signal as sig 
-
-
-def plot_correlation(parameter_list):
-    pass
+import matplotlib.pyplot as plt
 
 
 def filter20_to_20k(x, fs):
@@ -14,15 +11,12 @@ def filter20_to_20k(x, fs):
     return sig.sosfilt(sos, x)
 
 
-def plot_spectrum(parameter_list):
-    pass
-
 def normalize(data):
     assert isinstance(data, np.ndarray), "Assertion failed, input data is not an numpy array."
     return (data - data.min()) / (np.ptp(data))
 
 
-def pad_input_to_output_length(x, y):
+def pad_input_to_output_length(x, y):  # Use to find transfer function?
     """
     x: input array
     y: output array
@@ -40,6 +34,19 @@ def impulse_response(x, fs):
     k = np.exp(t*R/T)  # How to access this information from the input? --> Take in SoundFile object or NumPy array? --> Just take in as parameters?
     f = x[::-1] / k
     return sig.fftconvolve(x, f, mode="same")
+
+
+def transfer_function(x, y):
+    x_pad = pad_input_to_output_length(x, y)
+    x_fft = rfft(x_pad)  # / len(y)?
+    y_fft = rfft(y)
+    return y_fft / x_fft  # Arrays have to be the same length => Zero-pad with pad_input_to_output_length()
+
+
+def get_delay(in_data, out_data, fs, t):
+    # ax1.xcorr: Cross correlation is performed with numpy.correlate() with mode = 2("same").
+    corr = np.correlate(in_data[:int(t*fs)], out_data[:int(t*fs)], mode="same")  # mode="same" makes it very slow => use small t
+    return (int(len(corr)/2) - np.argmax(corr)) / fs  # seconds
 
 
 def generate_sine():
