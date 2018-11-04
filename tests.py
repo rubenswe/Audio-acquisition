@@ -17,14 +17,11 @@ def filename_generator(filename, N):
 
 
 def playrec_repeated(input_file, N, t):
-    # Remember that input filename cant be empty => Only change output file to look at delay?
     out_files = filename_generator("test", 10)
     in_data, fs = sf.read(input_file)
 
     for i in range(N):
         playrec(input_file, out_files[i])  # Should create 10 output files. use get_delay to find all delays
-        # Should playrec() return the data? So it will be available
-        #get_delay()...Can also do get_delay() in a separate function? After reading the test files generated above.
 
     delays = []
 
