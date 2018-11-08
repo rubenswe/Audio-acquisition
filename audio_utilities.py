@@ -38,8 +38,8 @@ def impulse_response(x, fs):
 
 def transfer_function(x, y):
     x_pad = pad_input_to_output_length(x, y)
-    x_fft = rfft(x_pad)  # / len(y)?
-    y_fft = rfft(y)
+    x_fft = rfft(x_pad)  / len(y)
+    y_fft = rfft(y)  / len(y)
     return y_fft / x_fft  # Arrays have to be the same length => Zero-pad with pad_input_to_output_length()
 
 
@@ -47,6 +47,19 @@ def get_delay(in_data, out_data, fs, t):
     # ax1.xcorr: Cross correlation is performed with numpy.correlate() with mode = 2("same").
     corr = np.correlate(in_data[:int(t*fs)], out_data[:int(t*fs)], mode="same")  # mode="same" makes it very slow => use small t
     return (int(len(corr)/2) - np.argmax(corr)) / fs  # seconds
+
+
+def filename_generator(filename, N):
+    filenames = []
+    for i in range(N):
+        name = filename + str(i) + ".wav"
+        filenames.append(name)
+    return filenames
+
+
+def get_available_devices():
+    # Implemented in class PlayRecorder()
+    raise NotImplementedError 
 
 
 def generate_sine():
