@@ -69,7 +69,7 @@ def plot_magnitude_response(tf, fs):
     plt.show()
 
 
-def plot_transfer_function(in_data, out_data, fs):
+def plot_transfer_function(in_data, out_data, fs):  # plot_magn_and phase?
     L = len(out_data)
     in_pad = pad_input_to_output_length(in_data, out_data)
     in_fft = fft(in_pad) / L
@@ -80,11 +80,19 @@ def plot_transfer_function(in_data, out_data, fs):
     fv = np.linspace(0, 1, np.floor(L/2)+1)*fn
 
     fig, ax = plt.subplots()
-    ax.semilogy(fv, np.abs(tf[:len(fv)])*2)
+    #ax.semilogy(fv, np.abs(tf[:len(fv)])*2)
     #plt.plot(fv, 20*np.log10(np.abs(tf[:len(fv)])))
     #ax.semilogy(fv, 20*np.log10(np.abs(tf[:len(fv)])))
     ax.grid()
     #plt.plot(t, in_pad, t, out_data)
     #plt.plot(fv, np.imag(tf[:len(fv)]))
     #plt.yscale("symlog")
+    #plt.plot(np.angle(tf))
+
+    spectrum, freqs, line = plt.phase_spectrum(out_data, fs)
+    #spectrum, freqs, line = plt.magnitude_spectrum(tf, fs)
+    #pxx, freqs = plt.psd(tf, NFFT=None, Fs=fs)  # in_data, out_data
+    #spectrum, freqs, line = plt.angle_spectrum(tf, fs)
+
+    plt.plot(freqs, spectrum)
     plt.show()
