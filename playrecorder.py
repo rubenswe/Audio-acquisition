@@ -3,8 +3,9 @@ import pyaudio as pa
 import numpy as np 
 import time
 import scipy.signal as sig 
+from scipy.signal import chirp
 from scipy.fftpack import ifft, fft, rfft, fftshift, fftfreq
-from audio_utilities import pad_input_to_output_length, get_delay
+from audio_utilities import pad_input_to_output_length, get_delay, generate_sweep, round_up_to_multiple  # Make part of class ?
 
 
 class PlayRecorder():
@@ -19,7 +20,9 @@ class PlayRecorder():
         self.p = pa.PyAudio()
 
         self.recorded_data = []
+        self.recorded_data_padded = []  # To be used on the last chunk of data
         self.played_data = []
+        self.delay = None
 
         self.is_data = None
         self.format = pa.paFloat32  # constant
@@ -28,7 +31,7 @@ class PlayRecorder():
         self.samplerate = samplerate
         self.chunk = chunk
 
-        if data == None and input_file is not None and output_file is not None:
+        if data.size == 0 and input_file > 0 and output_file > 0:
             self.is_data = False
             assert type(input_file) and type(output_file) == str, "Given input files must be strings ending with .wav"
             self.input_file = sf.SoundFile(input_file, "rb")
@@ -59,10 +62,13 @@ class PlayRecorder():
                 output=True,
                 stream_callback=callback)
 
+        print("RECORDING")
         stream.start_stream()  # callback() is called here
 
         while stream.is_active():
                 time.sleep(0.2)
+
+        print("DONE. Closing stream.")
 
         stream.stop_stream()
         stream.close()
@@ -79,26 +85,35 @@ class PlayRecorder():
         assert self.is_data == True, "The PlayRecorder instance is not initialized in the correct mode(is_data == False)"
         
         i = 0  # Index to traverse the numpy arrays
+        recorded_data_length = round_up_to_multiple(self.samplerate*delta_t, self.chunk)
 
-        data_padded = np.pad(self.recorded_data, (0, self.samplerate*delta_t), "constant", constant_values=(0, 0))
-        self.recorded_data = np.empty((len(self.recorded_data)+delta_t*self.samplerate, self.channels), dtype=self.dtype)
+        played_data_padded = np.pad(self.played_data, (0, recorded_data_length), "constant", constant_values=(0, 0))
+        self.recorded_data = np.empty((len(self.played_data)+delta_t*self.samplerate, self.channels), dtype=self.dtype)  # +get_delay? Cannot know the delay before recording
+        print("RECORDED DATA: ", len(self.recorded_data))
+
+        chunk_rest = len(self.recorded_data) % self.chunk
+        diff = self.chunk - chunk_rest
 
         def callback(in_data, frame_count, time_info, status):
 
-            #nonlocal self.recorded_data  # self.recorded_data not allowed?
             nonlocal i
-
             in_data = np.fromstring(in_data, dtype=self.dtype).reshape(self.chunk, self.channels)  # Convert the data
 
             # Last chunk of in_data might be shorter than the chunk size, so the left over samples are zero padded:
             if len(self.recorded_data[i:i+self.chunk]) < self.chunk:
-                recorded_data_padded = np.pad(self.recorded_data[:, 0], (0, self.chunk-len(self.recorded_data[i:i+self.chunk])), "constant", constant_values=(0, 0))
-                recorded_data_padded[i:i+self.chunk] = in_data[:len(recorded_data_padded[i:i+self.chunk]), 0]
+                print("INDATA: ", len(in_data))
+                print("DIFF: ", self.chunk - len(self.recorded_data[i:i+self.chunk]))
+                #recorded_data_padded = np.pad(self.recorded_data[:, 0], (0, self.chunk-len(self.recorded_data[i:i+self.chunk])), "constant", constant_values=(0, 0))
+                self.recorded_data_padded = np.pad(self.recorded_data, [(0, diff), (0, 0)], "constant", constant_values=(0, 0)) # laptop
+
+                #recorded_data_padded[i:i+self.chunk] = in_data[:len(recorded_data_padded[i:i+self.chunk]), 0]
+                self.recorded_data_padded[i:i+diff] = in_data[:diff] # laptop
+                # CHECK LAPTOP !!!!!!!!!!!!!!
                 return (None, pa.paComplete)
             else:
                 self.recorded_data[i:i+self.chunk] = in_data
 
-            out_data = data_padded[i:i+self.chunk]
+            out_data = played_data_padded[i:i+self.chunk]
             i = i + self.chunk
             return (out_data, pa.paContinue)
 
@@ -110,28 +125,33 @@ class PlayRecorder():
                 output=True,
                 stream_callback=callback)
 
+        print("RECORDING")
         stream.start_stream()  # callback() is called here
 
         while stream.is_active():
             time.sleep(0.2)
+
+        print("DONE. Closing stream.")
 
         stream.stop_stream()
         stream.close()
 
         self.p.terminate()
 
-        return self.recorded_data
+        return self.recorded_data_padded
 
 
-    def impulse_response(self):  # self.samplerate?
-        assert self.recorded_data is not None, "There is no recorded data"
+    def impulse_response(self):  # This gives the IR of an ESS, but it also kinda works for LSS? Inverse filter for LSS: LSS signal reversed along time axis!
+        
+        assert self.recorded_data.size > 0, "There is no recorded data"
 
         # Inverse filter:
         T = self.recorded_data.shape[0] / self.samplerate
         t = np.arange(0, T*self.samplerate - 1) / self.samplerate
-        R = np.log(20/20000)  # 20k?
+        R = np.log(20/20000)
         k = np.exp(t*R/T)
         f = self.recorded_data[::-1] / k
+        # Impulse response:
         return sig.fftconvolve(self.recorded_data, f, mode="same")
 
 
@@ -140,3 +160,11 @@ class PlayRecorder():
         played_data_fft = rfft(played_data_padded) / len(self.recorded_data)
         recorded_data_fft = rfft(self.recorded_data) / len(self.played_data)
         return recorded_data_fft / played_data_fft
+
+
+    def get_delay(self, t):
+        # ax1.xcorr: Cross correlation is performed with numpy.correlate() with mode = 2("same").
+        # t is how many sedonds of the singals should be evaluated. Use a small value for low latency (f.ex. 1 sec)
+        corr = np.correlate(self.played_data[:int(t*self.samplerate)], self.recorded_data[:int(t*self.samplerate)], mode="same")  # mode="same" makes it very slow => use small t
+        self.delay = (int(len(corr)/2) - np.argmax(corr)) / self.samplerate  # seconds
+        return self.delay

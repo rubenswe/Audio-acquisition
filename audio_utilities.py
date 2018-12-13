@@ -2,6 +2,7 @@ import soundfile as sf
 import numpy as np
 from scipy.fftpack import ifft, fft, rfft, fftshift, fftfreq
 import scipy.signal as sig 
+from scipy.signal import chirp
 import matplotlib.pyplot as plt
 
 
@@ -62,9 +63,28 @@ def get_available_devices():
     raise NotImplementedError 
 
 
+def decode(in_data, channels):
+    in_data = np.fromstring(in_data, dtype=np.float32)
+    # ...
+    raise NotImplementedError
+
+
+def encode(data):
+    raise NotImplementedError
+
+
 def generate_sine():
     pass
 
 
-def generate_sweep():
-    pass
+def generate_sweep(f1, f2, fs, T, volume):
+
+    assert volume > 0 and volume <= 1, "The volume must be between 0 and 1"
+
+    t = np.linspace(0, T, T*fs)
+    w = (chirp(t, f1, T, f2, method='linear', phi=90)*volume).astype(np.float32)
+    return w
+
+def round_up_to_multiple(number, multiple):
+    num = number + (multiple - 1)
+    return num - (num % multiple)
