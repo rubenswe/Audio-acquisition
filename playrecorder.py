@@ -5,7 +5,7 @@ import time
 import scipy.signal as sig 
 from scipy.signal import chirp
 from scipy.fftpack import ifft, fft, rfft, fftshift, fftfreq
-from audio_utilities import pad_input_to_output_length, get_delay, generate_sweep, round_up_to_multiple  # Make part of class ?
+from audio_utilities import pad_input_to_output_length, get_delay, generate_sweep, round_up_to_multiple
 
 
 class PlayRecorder():
@@ -22,11 +22,11 @@ class PlayRecorder():
         self.recorded_data = []
         self.recorded_data_padded = []  # To be used on the last chunk of data
         self.played_data = []
-        self.delay = None
+        self.delay = 0
 
         self.is_data = None
         self.format = pa.paFloat32  # constant
-        self.dtype = np.float32
+        self.dtype = np.float32  # constant
         self.channels = channels
         self.samplerate = samplerate
         self.chunk = chunk
@@ -73,11 +73,10 @@ class PlayRecorder():
         stream.stop_stream()
         stream.close()
 
-        self.p.terminate()  # have to create a new instance to record again??
+        self.p.terminate()
 
         self.input_file.close()
         self.output_file.close()
-        # Should return recorded data as numpy array??
 
 
     def playrec_from_data(self, delta_t):
@@ -88,8 +87,7 @@ class PlayRecorder():
         recorded_data_length = round_up_to_multiple(self.samplerate*delta_t, self.chunk)
 
         played_data_padded = np.pad(self.played_data, (0, recorded_data_length), "constant", constant_values=(0, 0))
-        self.recorded_data = np.empty((len(self.played_data)+delta_t*self.samplerate, self.channels), dtype=self.dtype)  # +get_delay? Cannot know the delay before recording
-        print("RECORDED DATA: ", len(self.recorded_data))
+        self.recorded_data = np.empty((len(self.played_data)+delta_t*self.samplerate, self.channels), dtype=self.dtype)
 
         chunk_rest = len(self.recorded_data) % self.chunk
         diff = self.chunk - chunk_rest
@@ -101,14 +99,8 @@ class PlayRecorder():
 
             # Last chunk of in_data might be shorter than the chunk size, so the left over samples are zero padded:
             if len(self.recorded_data[i:i+self.chunk]) < self.chunk:
-                print("INDATA: ", len(in_data))
-                print("DIFF: ", self.chunk - len(self.recorded_data[i:i+self.chunk]))
-                #recorded_data_padded = np.pad(self.recorded_data[:, 0], (0, self.chunk-len(self.recorded_data[i:i+self.chunk])), "constant", constant_values=(0, 0))
-                self.recorded_data_padded = np.pad(self.recorded_data, [(0, diff), (0, 0)], "constant", constant_values=(0, 0)) # laptop
-
-                #recorded_data_padded[i:i+self.chunk] = in_data[:len(recorded_data_padded[i:i+self.chunk]), 0]
-                self.recorded_data_padded[i:i+diff] = in_data[:diff] # laptop
-                # CHECK LAPTOP !!!!!!!!!!!!!!
+                self.recorded_data_padded = np.pad(self.recorded_data, [(0, diff), (0, 0)], "constant", constant_values=(0, 0))
+                self.recorded_data_padded[i:i+diff] = in_data[:diff]
                 return (None, pa.paComplete)
             else:
                 self.recorded_data[i:i+self.chunk] = in_data
@@ -141,18 +133,19 @@ class PlayRecorder():
         return self.recorded_data_padded
 
 
-    def impulse_response(self):  # This gives the IR of an ESS, but it also kinda works for LSS? Inverse filter for LSS: LSS signal reversed along time axis!
+    def impulse_response(self):
         
         assert self.recorded_data.size > 0, "There is no recorded data"
 
         # Inverse filter:
-        T = self.recorded_data.shape[0] / self.samplerate
-        t = np.arange(0, T*self.samplerate - 1) / self.samplerate
-        R = np.log(20/20000)
-        k = np.exp(t*R/T)
-        f = self.recorded_data[::-1] / k
+        played_padded = pad_input_to_output_length(self.played_data, self.recorded_data)
+        T = played_padded.shape[0] / self.samplerate
+        t = np.arange(0, T*self.samplerate) / self.samplerate
+        R = np.log(20000/20)
+        k = np.exp(t*R/T).astype(np.float32)
+        f = played_padded[::-1] / k
         # Impulse response:
-        return sig.fftconvolve(self.recorded_data, f, mode="same")
+        return sig.fftconvolve(self.recorded_data, f, mode="same")  # same
 
 
     def transfer_function(self):
@@ -163,8 +156,7 @@ class PlayRecorder():
 
 
     def get_delay(self, t):
-        # ax1.xcorr: Cross correlation is performed with numpy.correlate() with mode = 2("same").
-        # t is how many sedonds of the singals should be evaluated. Use a small value for low latency (f.ex. 1 sec)
+        # t is how many seconds of the singals should be evaluated. Use a small value for low latency (f.ex. 1 sec)
         corr = np.correlate(self.played_data[:int(t*self.samplerate)], self.recorded_data[:int(t*self.samplerate)], mode="same")  # mode="same" makes it very slow => use small t
         self.delay = (int(len(corr)/2) - np.argmax(corr)) / self.samplerate  # seconds
         return self.delay
